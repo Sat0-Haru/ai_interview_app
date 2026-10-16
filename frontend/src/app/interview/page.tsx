@@ -7,7 +7,7 @@ export default function InterviewPage() {
   // ステート管理
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [question, setQuestion] = useState('面接官：自己紹介と、これまでの開発経験について教えてください。');
+  const [question, setQuestion] = useState('面接官：簡単な自己紹介をお願いします。');
   const [aiResponse, setAiResponse] = useState('');
   const [loading, setLoading] = useState(false);
 
