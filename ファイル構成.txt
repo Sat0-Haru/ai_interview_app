@@ -1,0 +1,50 @@
+my_ai_interview_app/
+│
+├── frontend/                     # 【Next.js】 フロントエンド
+│   ├── public/                   # 静的ファイル（画像、ファビコンなど）
+│   ├── src/
+│   │   ├── app/                  # App Router（ページ・ルーティング）
+│   │   │   ├── layout.tsx        # 共通レイアウト（ヘッダー・サイドバー）
+│   │   │   ├── page.tsx          # トップページ / ログイン
+│   │   │   ├── dashboard/        # ダッシュボード（履歴一覧など）
+│   │   │   ├── interview/        # 面接実行画面（カメラ・マイク起動）
+│   │   │   └── result/[id]/      # リザルト・フィードバック画面
+│   │   │
+│   │   ├── components/           # 再利用するUIコンポーネント
+│   │   │   ├── CameraFeed.tsx    # Webカメラのキャプチャ＆自動送信処理
+│   │   │   ├── AudioRecorder.tsx # マイク録音＆送信処理
+│   │   │   └── ChatBox.tsx       # AI面接官との対話表示
+│   │   │
+│   │   ├── hooks/                # カスタムフック
+│   │   │   ├── useCamera.ts      # カメラ取得・フレーム抽出ロジック
+│   │   │   └── useAudio.ts       # マイク録音ロジック
+│   │   │
+│   │   └── lib/                  # 共通ユーティリティ・APIクライアント
+│   │       └── api.ts            # FastAPIへのリクエスト処理（fetch/axios）
+│   │
+│   ├── package.json
+│   └── next.config.js
+│
+├── backend/                      # 【FastAPI】 バックエンド
+│   ├── app/
+│   │   ├── main.py               # FastAPIエントリーポイント・CORS設定
+│   │   ├── database.py           # DB接続設定（SQLAlchemy等）
+│   │   ├── models.py             # DBテーブル定義（ユーザー、履歴書、面接履歴など）
+│   │   ├── schemas.py            # Pydanticモデル（APIデータ型定義）
+│   │   │
+│   │   ├── api/                  # APIエンドポイント群（ルーター）
+│   │   │   ├── auth.py           # ログイン・会員登録
+│   │   │   ├── resumes.py        # 履歴書アップロード・管理
+│   │   │   ├── companies.py      # 企業情報管理
+│   │   │   └── interview.py     # 模擬面接（チャット・音声・解析統合）
+│   │   │
+│   │   └── services/             # 外部AI・AI解析ロジック（コア部分）
+│   │       ├── whisper_service.py # 音声データ(audio) ➔ テキスト変換 (Whisper)
+│   │       ├── emotion_service.py # 画像(frame) ➔ 表情・目線解析 (DeepFace/MediaPipe)
+│   │       └── llm_service.py     # プロンプト組み立て ➔ 面接官返答生成 (OpenAI等)
+│   │
+│   ├── uploads/                  # ユーザーがアップした履歴書PDFなどの保存先
+│   ├── requirements.txt          # Pythonライブラリ一覧
+│   └── .env                      # APIキー等の環境変数（Git管理外）
+│
+└── README.md                     # プロジェクト概要・起動手順
