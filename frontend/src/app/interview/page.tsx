@@ -4,18 +4,16 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 
 export default function InterviewPage() {
-  // ステート管理
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [question, setQuestion] = useState('面接官：簡単な自己紹介をお願いします。');
+  const [question, setQuestion] = useState('面接官：自己紹介と、これまでの開発経験について教えてください。');
   const [aiResponse, setAiResponse] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // useRef
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const recognitionRef = useRef<any>(null);
 
-  // 1. Webカメラの起動処理
+  // 1. Webカメラ起動
   useEffect(() => {
     async function startCamera() {
       try {
@@ -40,7 +38,7 @@ export default function InterviewPage() {
     };
   }, []);
 
-  // 2. Web Speech API（音声認識）の初期化
+  // 2. 音声認識初期化
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const SpeechRecognition =
@@ -69,7 +67,6 @@ export default function InterviewPage() {
     }
   }, []);
 
-  // 音声認識の開始 / 停止切り替え
   const toggleRecording = () => {
     if (!recognitionRef.current) return;
 
@@ -83,7 +80,7 @@ export default function InterviewPage() {
     }
   };
 
-  // 3. FastAPI バックエンドへ回答を送信する処理
+  // 3. 回答送信
   const handleSubmitAnswer = async () => {
     if (!transcript) return;
     setLoading(true);
@@ -91,18 +88,11 @@ export default function InterviewPage() {
     try {
       const response = await fetch('http://localhost:8000/api/interview/answer', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          question: question,
-          answer: transcript,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, answer: transcript }),
       });
 
-      if (!response.ok) {
-        throw new Error('API通信エラー');
-      }
+      if (!response.ok) throw new Error('API通信エラー');
 
       const data = await response.json();
       setAiResponse(data.reply || '回答を受け取りました。');
@@ -115,8 +105,9 @@ export default function InterviewPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-6">
-      <h1 className="text-xl font-bold mb-4 text-center border-b border-slate-800 pb-3">
+    // 💡 背景色を bg-slate-900 から 白（bg-slate-50 / bg-white）に変更
+    <div className="min-h-screen bg-slate-50 text-slate-800 p-6">
+      <h1 className="text-xl font-bold mb-4 text-center border-b border-slate-200 pb-3 text-slate-900">
         AI Online Mock Interview Room
       </h1>
 
@@ -127,7 +118,7 @@ export default function InterviewPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             
             {/* 面接官の映像領域 */}
-            <div className="relative bg-slate-950 rounded-lg overflow-hidden aspect-video border border-slate-700 shadow-lg">
+            <div className="relative bg-slate-100 rounded-lg overflow-hidden aspect-video border border-slate-200 shadow-sm">
               <Image
                 src="/interviewer.png"
                 alt="AI面接官"
@@ -135,13 +126,13 @@ export default function InterviewPage() {
                 className="object-cover"
                 priority
               />
-              <div className="absolute bottom-2 left-2 bg-slate-900/80 backdrop-blur-sm px-3 py-1 text-xs rounded-md text-slate-200 border border-slate-700">
+              <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm px-3 py-1 text-xs rounded-md text-slate-700 font-medium border border-slate-200 shadow-sm">
                 AI 面接官
               </div>
             </div>
 
             {/* 自分のカメラプレビュー領域 */}
-            <div className="relative bg-black rounded-lg overflow-hidden aspect-video border border-slate-700 shadow-lg">
+            <div className="relative bg-black rounded-lg overflow-hidden aspect-video border border-slate-200 shadow-sm">
               <video
                 ref={videoRef}
                 autoPlay
@@ -149,11 +140,11 @@ export default function InterviewPage() {
                 muted
                 className="w-full h-full object-cover transform -scale-x-100"
               />
-              <div className="absolute top-2 left-2 bg-red-600 px-2 py-0.5 text-[10px] font-bold rounded-full flex items-center gap-1">
+              <div className="absolute top-2 left-2 bg-red-600 text-white px-2 py-0.5 text-[10px] font-bold rounded-full flex items-center gap-1">
                 <span className="w-1.5 h-1.5 bg-white rounded-full animate-ping" />
                 LIVE
               </div>
-              <div className="absolute bottom-2 left-2 bg-slate-900/80 backdrop-blur-sm px-3 py-1 text-xs rounded-md text-slate-200 border border-slate-700">
+              <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-sm px-3 py-1 text-xs rounded-md text-white font-medium">
                 あなた（応募者）
               </div>
             </div>
@@ -161,11 +152,11 @@ export default function InterviewPage() {
           </div>
 
           {/* 現在の質問カード */}
-          <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-            <h2 className="text-xs font-semibold text-blue-400 mb-1 tracking-wider uppercase">
+          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+            <h2 className="text-xs font-semibold text-blue-600 mb-1 tracking-wider uppercase">
               Current Question
             </h2>
-            <p className="text-base font-medium">{question}</p>
+            <p className="text-base font-medium text-slate-900">{question}</p>
           </div>
         </div>
 
@@ -173,13 +164,13 @@ export default function InterviewPage() {
         <div className="flex flex-col gap-4">
           
           {/* 音声認識結果 */}
-          <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex-1 flex flex-col min-h-[250px]">
-            <h2 className="text-xs font-semibold text-green-400 mb-2 tracking-wider uppercase">
+          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[250px]">
+            <h2 className="text-xs font-semibold text-emerald-600 mb-2 tracking-wider uppercase">
               Live Transcript
             </h2>
-            <div className="flex-1 bg-slate-900 p-3 rounded text-sm text-slate-200 overflow-y-auto border border-slate-800">
+            <div className="flex-1 bg-slate-50 p-3 rounded text-sm text-slate-800 overflow-y-auto border border-slate-200">
               {transcript || (
-                <span className="text-slate-500 italic">
+                <span className="text-slate-400 italic">
                   「録音開始」を押して話すと、ここにリアルタイムで文字起こしされます...
                 </span>
               )}
@@ -188,7 +179,7 @@ export default function InterviewPage() {
             <div className="flex gap-2 mt-4">
               <button
                 onClick={toggleRecording}
-                className={`flex-1 py-2 px-3 rounded text-sm font-medium transition ${
+                className={`flex-1 py-2 px-3 rounded text-sm font-medium transition shadow-sm ${
                   isRecording
                     ? 'bg-red-500 hover:bg-red-600 text-white'
                     : 'bg-blue-600 hover:bg-blue-700 text-white'
@@ -200,7 +191,7 @@ export default function InterviewPage() {
               <button
                 onClick={handleSubmitAnswer}
                 disabled={!transcript || loading}
-                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 text-white py-2 px-4 rounded text-sm font-medium transition"
+                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white py-2 px-4 rounded text-sm font-medium transition shadow-sm"
               >
                 {loading ? '送信中...' : '送信する'}
               </button>
@@ -209,11 +200,11 @@ export default function InterviewPage() {
 
           {/* AIフィードバック */}
           {aiResponse && (
-            <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-              <h2 className="text-xs font-semibold text-purple-400 mb-1 tracking-wider uppercase">
+            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+              <h2 className="text-xs font-semibold text-purple-600 mb-1 tracking-wider uppercase">
                 Feedback
               </h2>
-              <p className="text-sm text-slate-200">{aiResponse}</p>
+              <p className="text-sm text-slate-700">{aiResponse}</p>
             </div>
           )}
 
