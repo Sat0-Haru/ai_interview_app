@@ -6,7 +6,7 @@ import Image from 'next/image';
 export default function InterviewPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [question, setQuestion] = useState('面接官：自己紹介と、これまでの開発経験について教えてください。');
+  const [question, setQuestion] = useState('面接官：簡単に自己紹介をお願いします。');
   const [aiResponse, setAiResponse] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -108,7 +108,7 @@ export default function InterviewPage() {
     // 💡 背景色を bg-slate-900 から 白（bg-slate-50 / bg-white）に変更
     <div className="min-h-screen bg-slate-50 text-slate-800 p-6">
       <h1 className="text-xl font-bold mb-4 text-center border-b border-slate-200 pb-3 text-slate-900">
-        AI Online Mock Interview Room
+        AI面接アプリ
       </h1>
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -140,10 +140,7 @@ export default function InterviewPage() {
                 muted
                 className="w-full h-full object-cover transform -scale-x-100"
               />
-              <div className="absolute top-2 left-2 bg-red-600 text-white px-2 py-0.5 text-[10px] font-bold rounded-full flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-white rounded-full animate-ping" />
-                LIVE
-              </div>
+              
               <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-sm px-3 py-1 text-xs rounded-md text-white font-medium">
                 あなた（応募者）
               </div>
@@ -154,7 +151,7 @@ export default function InterviewPage() {
           {/* 現在の質問カード */}
           <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
             <h2 className="text-xs font-semibold text-blue-600 mb-1 tracking-wider uppercase">
-              Current Question
+              現在の質問
             </h2>
             <p className="text-base font-medium text-slate-900">{question}</p>
           </div>
@@ -166,7 +163,7 @@ export default function InterviewPage() {
           {/* 音声認識結果 */}
           <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[250px]">
             <h2 className="text-xs font-semibold text-emerald-600 mb-2 tracking-wider uppercase">
-              Live Transcript
+              あなたの回答
             </h2>
             <div className="flex-1 bg-slate-50 p-3 rounded text-sm text-slate-800 overflow-y-auto border border-slate-200">
               {transcript || (
