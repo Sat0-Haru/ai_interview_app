@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
 import json
+import time
 from google import genai
 from google.genai import types
 
@@ -11,7 +12,6 @@ load_dotenv()
 
 app = FastAPI(title="AI Interview App API")
 
-# Gemini API クライアント初期化
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
@@ -33,70 +33,70 @@ class AnswerRequest(BaseModel):
     answer: str
 
 class AnswerResponse(BaseModel):
-    reply: str
     next_question: str
+    processing_time: float
+
+class ResetResponse(BaseModel):
+    initial_question: str
+
+# 初期質問
+INITIAL_QUESTION = "面接官：簡単に自己紹介をお願いします。"
 
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "FastAPI サーバーが正常に起動しています"}
 
+# 💡 面接初期化エンドポイント
+@app.post("/api/interview/reset", response_model=ResetResponse)
+async def reset_interview():
+    return ResetResponse(initial_question=INITIAL_QUESTION)
+
 @app.post("/api/interview/answer", response_model=AnswerResponse)
-def process_answer(request: AnswerRequest):
+async def process_answer(request: AnswerRequest):
+    start_time = time.time()
+
     if not client:
-        print("Warning: GEMINI_API_KEY が設定されていないためモック応答を返します。")
         return AnswerResponse(
-            reply="（APIキー未設定）回答を受け取りました。結論から明確に話せており素晴らしいです！",
-            next_question="これまでにチームで最も困難を乗り越えた経験について教えてください。"
+            next_question="これまでにチームで最も困難を乗り越えた経験について教えてください。",
+            processing_time=0.0
         )
 
     prompt = f"""
-あなたはIT企業のベテラン採用面接官です。
-応募者の回答を評価し、適切なフィードバックと関連する「次の質問」を生成してください。
+あなたは面接官です。応募者の回答を踏まえて、次の質問を1つ作成してください。
 
-【現在の質問】
-{request.question}
+【直前の質問】: {request.question}
+【応募者の回答】: {request.answer}
 
-【応募者の回答】
-{request.answer}
-
-必ず以下のJSONフォーマットのみを出力してください。余計な解説やMarkdownの装飾は含めないでください。
+必ず以下のJSONフォーマットのみを出力してください。
 {{
-  "reply": "応募者へのフィードバック文",
-  "next_question": "次に投げかける面接の質問文"
+  "next_question": "次の質問文"
 }}
 """
 
-    # 試行するモデルの候補リスト（混雑時は自動で次のモデルを試す）
-    candidate_models = [
-        'gemini-3.8-flash',
-        'gemini-3.5-flash',
-        'gemini-flash-latest',
-    ]
+    try:
+        response = await client.aio.models.generate_content(
+            model='gemini-3.5-flash-lite',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction="あなたは面接官です。簡潔に次の質問文のみを出力してください。",
+                response_mime_type="application/json",
+                temperature=0.7,
+            ),
+        )
 
-    for model_name in candidate_models:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction="あなたは実践的で建設的なアドバイスを行うAI面接官です。",
-                    response_mime_type="application/json",
-                ),
-            )
+        elapsed_time = round(time.time() - start_time, 2)
+        print(f"Gemini 3.5 Flash-Lite Response Time: {elapsed_time}s")
 
-            data = json.loads(response.text)
-            return AnswerResponse(
-                reply=data.get("reply", "回答を受け取りました。"),
-                next_question=data.get("next_question", "次の質問を用意しています。")
-            )
+        data = json.loads(response.text)
+        return AnswerResponse(
+            next_question=data.get("next_question", "これまでにチームで最も困難を乗り越えた経験について教えてください。"),
+            processing_time=elapsed_time
+        )
 
-        except Exception as e:
-            print(f"Model {model_name} failed with error: {e}")
-            # 503 などの場合は次のモデルを試行
-            continue
-
-    # すべてのモデルでエラーが発生した場合のフォールバック
-    return AnswerResponse(
-        reply="現在サーバーが混雑しています。回答を受け取りましたので、続けて次の質問にお答えください。",
-        next_question="これまでの開発経験で一番こだわったポイントは何ですか？"
-    )
+    except Exception as e:
+        elapsed_time = round(time.time() - start_time, 2)
+        print(f"Gemini API Error ({elapsed_time}s): {e}")
+        return AnswerResponse(
+            next_question="これまでに直面した技術的な課題と、それをどのように克服したか教えてください。",
+            processing_time=elapsed_time
+        )

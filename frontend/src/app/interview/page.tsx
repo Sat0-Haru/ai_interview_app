@@ -7,8 +7,8 @@ export default function InterviewPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [question, setQuestion] = useState('面接官：簡単に自己紹介をお願いします。');
-  const [aiResponse, setAiResponse] = useState('');
   const [loading, setLoading] = useState(false);
+  const [responseTime, setResponseTime] = useState<number | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -79,10 +79,40 @@ export default function InterviewPage() {
     }
   };
 
+  // 💡 面接リセット処理
+  const handleResetInterview = async () => {
+    const confirmReset = window.confirm('面接を最初からやり直しますか？現在のやり取りはリセットされます。');
+    if (!confirmReset) return;
+
+    // 録音中なら停止
+    if (isRecording && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+    }
+
+    try {
+      const response = await fetch('http://localhost:8000/api/interview/reset', {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('API通信エラー');
+
+      const data = await response.json();
+      setQuestion(data.initial_question || '簡単に自己紹介をお願いします。');
+    } catch (error) {
+      console.error('リセットエラー:', error);
+      setQuestion('簡単に自己紹介をお願いします。');
+    } finally {
+      // 全状態のリセット
+      setTranscript('');
+      setResponseTime(null);
+    }
+  };
+
   // 3. 回答送信
   const handleSubmitAnswer = async () => {
     if (!transcript.trim()) return;
     setLoading(true);
+    setResponseTime(null);
 
     try {
       const response = await fetch('http://localhost:8000/api/interview/answer', {
@@ -94,16 +124,17 @@ export default function InterviewPage() {
       if (!response.ok) throw new Error('API通信エラー');
 
       const data = await response.json();
-      setAiResponse(data.reply || '回答を受け取りました。');
 
-      // 次の質問に更新し、テキスト入力欄をクリア
+      if (data.processing_time !== undefined) {
+        setResponseTime(data.processing_time);
+      }
+
       if (data.next_question) {
         setQuestion(data.next_question);
         setTranscript('');
       }
     } catch (error) {
       console.error('送信エラー:', error);
-      setAiResponse('（モック応答）素晴らしい回答ですね！具体的なエピソードも交えて話せています。');
     } finally {
       setLoading(false);
     }
@@ -111,9 +142,20 @@ export default function InterviewPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 p-6">
-      <h1 className="text-xl font-bold mb-4 text-center border-b border-slate-200 pb-3 text-slate-900">
-        AI オンライン面接練習ルーム
-      </h1>
+      {/* ヘッダー領域（タイトル＋画面右上にリセットボタン） */}
+      <div className="max-w-6xl mx-auto flex justify-between items-center border-b border-slate-200 pb-3 mb-6">
+        <div className="w-24"></div> {/* 左右中央揃え用のスペース */}
+        <h1 className="text-xl font-bold text-slate-900">
+          AI模擬面接
+        </h1>
+        {/* 💡 画面右上のリセットボタン */}
+        <button
+          onClick={handleResetInterview}
+          className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-sm flex items-center gap-1.5 hover:text-red-600 hover:border-red-200"
+        >
+          面接を最初からやり直す
+        </button>
+      </div>
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         
@@ -151,19 +193,25 @@ export default function InterviewPage() {
 
           </div>
 
-          {/* 現在の質問カード */}
+          {/* 現在の質問カード ＆ 応答時間表示 */}
           <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-            <h2 className="text-xs font-semibold text-blue-600 mb-1 tracking-wider uppercase">
-              現在の質問
-            </h2>
+            <div className="flex justify-between items-center mb-1">
+              <h2 className="text-xs font-semibold text-blue-600 tracking-wider uppercase">
+                現在の質問
+              </h2>
+              {responseTime !== null && (
+                <span className="text-xs text-slate-400 font-mono">
+                  質問生成時間: {responseTime}秒
+                </span>
+              )}
+            </div>
             <p className="text-base font-medium text-slate-900">{question}</p>
           </div>
         </div>
 
-        {/* 右側：テキスト入力・修正 ＆ フィードバック表示 */}
+        {/* 右側：テキスト入力・修正 */}
         <div className="flex flex-col gap-4">
           
-          {/* 回答入力領域 */}
           <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[280px]">
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-xs font-semibold text-emerald-600 tracking-wider uppercase">
@@ -203,20 +251,10 @@ export default function InterviewPage() {
                 disabled={!transcript.trim() || loading}
                 className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white py-2 px-4 rounded text-sm font-medium transition shadow-sm"
               >
-                {loading ? '送信中...' : '送信する'}
+                {loading ? '質問作成中...' : '送信する'}
               </button>
             </div>
           </div>
-
-          {/* AIフィードバック */}
-          {aiResponse && (
-            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-              <h2 className="text-xs font-semibold text-purple-600 mb-1 tracking-wider uppercase">
-                Feedback
-              </h2>
-              <p className="text-sm text-slate-700">{aiResponse}</p>
-            </div>
-          )}
 
         </div>
 
