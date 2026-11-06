@@ -2,5 +2,6 @@
 AI模擬面接アプリケーション
 
 バックエンド仮想環境有効化
+cd backend
 venv\Scripts\activate.bat
 uvicorn app.main:app --reload --port 8000
