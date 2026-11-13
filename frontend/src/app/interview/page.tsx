@@ -10,6 +10,15 @@ interface ChatMessage {
   responseTime?: number;
 }
 
+// 最終フィードバックの型定義
+interface FeedbackResult {
+  score: number;
+  summary: string;
+  good_points: string[];
+  improvement_points: string[];
+  processing_time?: number;
+}
+
 const INITIAL_QUESTION = '面接官：簡単に自己紹介をお願いします。';
 
 export default function InterviewPage() {
@@ -22,6 +31,11 @@ export default function InterviewPage() {
   const [history, setHistory] = useState<ChatMessage[]>([
     { role: 'ai', text: INITIAL_QUESTION },
   ]);
+
+  // 面接終了・フィードバック用の状態
+  const [isFinished, setIsFinished] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
+  const [feedback, setFeedback] = useState<FeedbackResult | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -89,7 +103,7 @@ export default function InterviewPage() {
   }, [history]);
 
   const toggleRecording = () => {
-    if (!recognitionRef.current) return;
+    if (!recognitionRef.current || isFinished) return;
 
     if (isRecording) {
       recognitionRef.current.stop();
@@ -102,7 +116,7 @@ export default function InterviewPage() {
 
   // 面接リセット処理
   const handleResetInterview = async () => {
-    const confirmReset = window.confirm('面接を最初からやり直しますか？現在のやり取りはリセットされます。');
+    const confirmReset = window.confirm('面接を最初からやり直しますか？現在のやり取りと評価はリセットされます。');
     if (!confirmReset) return;
 
     if (isRecording && recognitionRef.current) {
@@ -125,13 +139,21 @@ export default function InterviewPage() {
       setQuestion(initialQ);
       setHistory([{ role: 'ai', text: initialQ }]);
       setTranscript('');
+      setIsFinished(false);
+      setIsFinishing(false);
+      setFeedback(null);
     }
   };
 
   // 回答送信処理
   const handleSubmitAnswer = async () => {
-    if (!transcript.trim()) return;
+    if (!transcript.trim() || isFinished) return;
     const submittedAnswer = transcript.trim();
+
+    if (isRecording && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+    }
 
     setLoading(true);
     setTranscript('');
@@ -152,7 +174,6 @@ export default function InterviewPage() {
 
       if (data.next_question) {
         setQuestion(data.next_question);
-        // AIの次の質問を履歴に追加
         setHistory((prev) => [
           ...prev,
           {
@@ -169,13 +190,53 @@ export default function InterviewPage() {
     }
   };
 
+  // 面接終了・総合フィードバック取得処理
+  const handleFinishInterview = async () => {
+    const confirmFinish = window.confirm('面接を終了し、これまでのやり取りから総合フィードバックを作成しますか？');
+    if (!confirmFinish) return;
+
+    if (isRecording && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+    }
+
+    setIsFinishing(true);
+
+    try {
+      const response = await fetch('http://localhost:8000/api/interview/finish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          history: history.map((item) => ({
+            role: item.role,
+            text: item.text,
+          })),
+        }),
+      });
+
+      if (!response.ok) throw new Error('フィードバック取得エラー');
+
+      const data: FeedbackResult = await response.json();
+      setFeedback(data);
+      setIsFinished(true);
+    } catch (error) {
+      console.error('終了処理エラー:', error);
+      alert('フィードバックの生成に失敗しました。');
+    } finally {
+      setIsFinishing(false);
+    }
+  };
+
+  // ユーザーが1回以上回答しているか判定
+  const hasUserAnswered = history.some((item) => item.role === 'user');
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-6">
+    <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-slate-50 text-slate-800 p-4 lg:p-6 flex flex-col">
       {/* ヘッダー領域 */}
-      <div className="max-w-6xl mx-auto flex justify-between items-center border-b border-slate-200 pb-3 mb-6">
+      <div className="max-w-6xl w-full mx-auto flex justify-between items-center border-b border-slate-200 pb-3 mb-4 shrink-0">
         <div className="w-36 hidden sm:block"></div>
         <h1 className="text-xl font-bold text-slate-900">
-          AI オンライン面接練習ルーム
+          AI模擬面接アプリ
         </h1>
         <button
           onClick={handleResetInterview}
@@ -185,13 +246,14 @@ export default function InterviewPage() {
         </button>
       </div>
 
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* メインコンテンツ領域（高さを画面内に固定） */}
+      <div className="max-w-6xl w-full mx-auto flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
         
         {/* 左側〜中央：カメラ映像 ＆ 会話履歴 */}
-        <div className="lg:col-span-2 flex flex-col gap-4">
-          {/* カメラ映像 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="relative bg-slate-100 rounded-lg overflow-hidden aspect-video border border-slate-200 shadow-sm">
+        <div className="lg:col-span-2 flex flex-col gap-4 min-h-0">
+          {/* カメラ映像（高さ固定） */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 shrink-0">
+            <div className="relative bg-slate-100 rounded-lg overflow-hidden aspect-video max-h-48 w-full border border-slate-200 shadow-sm">
               <Image
                 src="/interviewer.png"
                 alt="AI面接官"
@@ -204,7 +266,7 @@ export default function InterviewPage() {
               </div>
             </div>
 
-            <div className="relative bg-black rounded-lg overflow-hidden aspect-video border border-slate-200 shadow-sm">
+            <div className="relative bg-black rounded-lg overflow-hidden aspect-video max-h-48 w-full border border-slate-200 shadow-sm">
               <video
                 ref={videoRef}
                 autoPlay
@@ -218,29 +280,31 @@ export default function InterviewPage() {
             </div>
           </div>
 
-          {/* 現在の質問ハイライト */}
-          <div className="bg-white p-4 rounded-lg border-l-4 border-l-blue-600 border border-slate-200 shadow-sm">
-            <div className="flex justify-between items-center mb-1">
-              <h2 className="text-xs font-semibold text-blue-600 tracking-wider uppercase">
-                現在の質問
-              </h2>
-              <span className="text-xs text-slate-400">
-                全 {Math.ceil(history.length / 2)} 問目
-              </span>
+          {/* 現在の質問ハイライト（面接中のみ表示・高さ固定） */}
+          {!isFinished && (
+            <div className="bg-white p-3.5 rounded-lg border-l-4 border-l-blue-600 border border-slate-200 shadow-sm shrink-0">
+              <div className="flex justify-between items-center mb-1">
+                <h2 className="text-xs font-semibold text-blue-600 tracking-wider uppercase">
+                  現在の質問
+                </h2>
+                <span className="text-xs text-slate-400">
+                  全 {Math.ceil(history.length / 2)} 問目
+                </span>
+              </div>
+              <p className="text-sm font-medium text-slate-900 line-clamp-2">{question}</p>
             </div>
-            <p className="text-base font-medium text-slate-900">{question}</p>
-          </div>
+          )}
 
-          {/* これまでの面接履歴（スクロールしてさかのぼり可能） */}
-          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col">
-            <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-100">
+          {/* これまでの面接履歴（残り高さをすべて使い、枠内スクロールに固定） */}
+          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex-1 min-h-[240px] lg:min-h-0 flex flex-col">
+            <div className="flex justify-between items-center mb-2 pb-2 border-b border-slate-100 shrink-0">
               <h2 className="text-xs font-semibold text-slate-500 tracking-wider uppercase">
                 これまでのやり取り（履歴）
               </h2>
-              <span className="text-xs text-slate-400">スクロールして過去を確認</span>
+              <span className="text-xs text-slate-400">スクロールして履歴を確認</span>
             </div>
 
-            <div className="max-h-64 overflow-y-auto pr-2 space-y-3">
+            <div className="flex-1 overflow-y-auto pr-2 space-y-3">
               {history.map((item, idx) => (
                 <div
                   key={idx}
@@ -278,57 +342,156 @@ export default function InterviewPage() {
                 </div>
               )}
 
-              {/* 自動スクロール用のアンカー */}
               <div ref={historyEndRef} />
             </div>
           </div>
         </div>
 
-        {/* 右側：回答入力・音声操作 */}
-        <div className="flex flex-col gap-4">
-          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[320px]">
-            <div className="flex justify-between items-center mb-2">
-              <h2 className="text-xs font-semibold text-emerald-600 tracking-wider uppercase">
-                あなたの回答
-              </h2>
-              {transcript && (
+        {/* 右側：回答入力・音声操作 または 最終フィードバック結果（高さ固定） */}
+        <div className="flex flex-col gap-4 min-h-0">
+          {!isFinished ? (
+            <>
+              {/* 回答入力カード（残り高さにフィットし、内部でスクロール） */}
+              <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex-1 min-h-[260px] lg:min-h-0 flex flex-col">
+                <div className="flex justify-between items-center mb-2 shrink-0">
+                  <h2 className="text-xs font-semibold text-emerald-600 tracking-wider uppercase">
+                    あなたの回答
+                  </h2>
+                  {transcript && (
+                    <button
+                      onClick={() => setTranscript('')}
+                      className="text-xs text-slate-400 hover:text-slate-600 underline"
+                    >
+                      クリア
+                    </button>
+                  )}
+                </div>
+
+                <textarea
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  disabled={loading || isFinishing}
+                  placeholder="音声入力で話すか、ここに直接入力してください..."
+                  className="flex-1 w-full bg-slate-50 p-3 rounded text-sm text-slate-800 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none overflow-y-auto disabled:opacity-60"
+                />
+
+                <div className="flex gap-2 mt-3 shrink-0">
+                  <button
+                    onClick={toggleRecording}
+                    disabled={loading || isFinishing}
+                    className={`flex-1 py-2 px-3 rounded text-sm font-medium transition shadow-sm disabled:opacity-50 ${
+                      isRecording
+                        ? 'bg-red-500 hover:bg-red-600 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    {isRecording ? '🎤 録音停止' : '🎙️ 音声入力'}
+                  </button>
+
+                  <button
+                    onClick={handleSubmitAnswer}
+                    disabled={!transcript.trim() || loading || isFinishing}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white py-2 px-4 rounded text-sm font-medium transition shadow-sm"
+                  >
+                    {loading ? '質問作成中...' : '送信する'}
+                  </button>
+                </div>
+              </div>
+
+              {/* 面接終了・評価ボタンカード（高さ固定） */}
+              <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm shrink-0">
+                <p className="text-xs text-slate-500 mb-2.5 leading-relaxed">
+                  十分な質問に回答したら、面接を終了してこれまでのやり取りの総合フィードバックを受け取れます。
+                </p>
                 <button
-                  onClick={() => setTranscript('')}
-                  className="text-xs text-slate-400 hover:text-slate-600 underline"
+                  onClick={handleFinishInterview}
+                  disabled={!hasUserAnswered || loading || isFinishing}
+                  className="w-full py-2.5 px-4 rounded-lg text-sm font-semibold transition shadow-sm bg-slate-800 hover:bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-400"
                 >
-                  クリア
+                  {isFinishing ? '総合フィードバックを生成中...' : '面接を終了する'}
                 </button>
-              )}
-            </div>
+              </div>
+            </>
+          ) : (
+            /* 面接終了後の総合フィードバック表示パネル（高さ固定・内部スクロール） */
+            feedback && (
+              <div className="bg-white p-5 rounded-lg border-t-4 border-t-indigo-600 border border-slate-200 shadow-sm flex-1 min-h-0 flex flex-col">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3 shrink-0">
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900">
+                      面接総合フィードバック
+                    </h2>
+                    {feedback.processing_time !== undefined && (
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        ⚡ 生成時間: {feedback.processing_time}秒
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-slate-500 block">総合スコア</span>
+                    <span className="text-2xl font-extrabold text-indigo-600">
+                      {feedback.score}
+                      <span className="text-xs font-normal text-slate-400"> / 100点</span>
+                    </span>
+                  </div>
+                </div>
 
-            <textarea
-              value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
-              placeholder="「音声入力」で話すか、ここに直接入力してください..."
-              className="flex-1 w-full bg-slate-50 p-3 rounded text-sm text-slate-800 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
-            />
+                {/* スクロール可能なフィードバック本体 */}
+                <div className="flex-1 overflow-y-auto pr-1 space-y-4">
+                  {/* 総評 */}
+                  <div>
+                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                      総評
+                    </h3>
+                    <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 p-3 rounded border border-slate-100">
+                      {feedback.summary}
+                    </p>
+                  </div>
 
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={toggleRecording}
-                className={`flex-1 py-2 px-3 rounded text-sm font-medium transition shadow-sm ${
-                  isRecording
-                    ? 'bg-red-500 hover:bg-red-600 text-white'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              >
-                {isRecording ? '🎤 録音停止' : '🎙️ 音声入力'}
-              </button>
+                  {/* 良かった点 */}
+                  <div>
+                    <h3 className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <span>👍</span> 良かった点
+                    </h3>
+                    <ul className="space-y-1.5">
+                      {feedback.good_points.map((point, i) => (
+                        <li
+                          key={i}
+                          className="text-xs text-slate-700 bg-emerald-50/60 border border-emerald-100 px-3 py-2 rounded leading-relaxed"
+                        >
+                          • {point}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
 
-              <button
-                onClick={handleSubmitAnswer}
-                disabled={!transcript.trim() || loading}
-                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white py-2 px-4 rounded text-sm font-medium transition shadow-sm"
-              >
-                {loading ? '質問作成中...' : '送信する'}
-              </button>
-            </div>
-          </div>
+                  {/* 改善点 */}
+                  <div>
+                    <h3 className="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <span>💡</span> 改善アドバイス
+                    </h3>
+                    <ul className="space-y-1.5">
+                      {feedback.improvement_points.map((point, i) => (
+                        <li
+                          key={i}
+                          className="text-xs text-slate-700 bg-amber-50/60 border border-amber-100 px-3 py-2 rounded leading-relaxed"
+                        >
+                          • {point}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleResetInterview}
+                  className="mt-3 w-full py-2.5 px-4 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white transition shadow-sm shrink-0"
+                >
+                  もう一度最初から練習する
+                </button>
+              </div>
+            )
+          )}
         </div>
 
       </div>
