@@ -17,9 +17,27 @@ interface FeedbackResult {
   good_points: string[];
   improvement_points: string[];
   processing_time?: number;
+  isMock?: boolean; // 仮データ判定用フラグ
 }
 
 const INITIAL_QUESTION = '面接官：簡単に自己紹介をお願いします。';
+
+// バックエンド未接続・エラー時の仮フィードバックデータ
+const MOCK_FEEDBACK: FeedbackResult = {
+  score: 82,
+  summary:
+    '全体を通して落ち着いて質問の意図を汲み取り、論理的に回答できています。特に自身の経験に基づいた具体例が分かりやすく、面接官に良い印象を与えています。結論ファーストの意識をさらに高めると、より説得力が増します。',
+  good_points: [
+    '質問に対して結論から簡潔に答えようとする姿勢が見られ、話の全体像が掴みやすかったです。',
+    '過去の経験や具体的なエピソードを交えて説明できており、説得力がありました。',
+  ],
+  improvement_points: [
+    '一部の回答で背景説明が少し長くなる傾向があるため、1回答あたり1分〜1分半程度を目安に要約するとさらに良くなります。',
+    '取り組みの結果得られた定量的な成果（数値や具体的な変化）をもう一言添えると、アピール力が一層高まります。',
+  ],
+  processing_time: 0.0,
+  isMock: true,
+};
 
 export default function InterviewPage() {
   const [isRecording, setIsRecording] = useState(false);
@@ -190,7 +208,7 @@ export default function InterviewPage() {
     }
   };
 
-  // 面接終了・総合フィードバック取得処理
+  // 面接終了・総合フィードバック取得処理（取得不可時は仮データを表示）
   const handleFinishInterview = async () => {
     const confirmFinish = window.confirm('面接を終了し、これまでのやり取りから総合フィードバックを作成しますか？');
     if (!confirmFinish) return;
@@ -217,11 +235,13 @@ export default function InterviewPage() {
       if (!response.ok) throw new Error('フィードバック取得エラー');
 
       const data: FeedbackResult = await response.json();
-      setFeedback(data);
+      setFeedback({ ...data, isMock: false });
       setIsFinished(true);
     } catch (error) {
-      console.error('終了処理エラー:', error);
-      alert('フィードバックの生成に失敗しました。');
+      console.warn('バックエンドからフィードバックを取得できなかったため、仮のフィードバックを表示します:', error);
+      // 仮のフィードバックを表示
+      setFeedback(MOCK_FEEDBACK);
+      setIsFinished(true);
     } finally {
       setIsFinishing(false);
     }
@@ -408,7 +428,7 @@ export default function InterviewPage() {
                   disabled={!hasUserAnswered || loading || isFinishing}
                   className="w-full py-2.5 px-4 rounded-lg text-sm font-semibold transition shadow-sm bg-slate-800 hover:bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-400"
                 >
-                  {isFinishing ? '総合フィードバックを生成中...' : '面接を終了する'}
+                  {isFinishing ? '総合フィードバックを生成中...' : '面接を終了してフィードバックを受け取る'}
                 </button>
               </div>
             </>
@@ -418,10 +438,17 @@ export default function InterviewPage() {
               <div className="bg-white p-5 rounded-lg border-t-4 border-t-indigo-600 border border-slate-200 shadow-sm flex-1 min-h-0 flex flex-col">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3 shrink-0">
                   <div>
-                    <h2 className="text-sm font-bold text-slate-900">
-                      面接総合フィードバック
-                    </h2>
-                    {feedback.processing_time !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-bold text-slate-900">
+                        面接総合フィードバック
+                      </h2>
+                      {feedback.isMock && (
+                        <span className="text-[10px] font-medium bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200">
+                          仮データ表示中
+                        </span>
+                      )}
+                    </div>
+                    {feedback.processing_time !== undefined && !feedback.isMock && (
                       <span className="text-[11px] text-slate-400 font-mono">
                         ⚡ 生成時間: {feedback.processing_time}秒
                       </span>
