@@ -17,7 +17,7 @@ interface FeedbackResult {
   good_points: string[];
   improvement_points: string[];
   processing_time?: number;
-  isMock?: boolean; // 仮データ判定用フラグ
+  isMock?: boolean;
 }
 
 const INITIAL_QUESTION = '面接官：簡単に自己紹介をお願いします。';
@@ -163,7 +163,7 @@ export default function InterviewPage() {
     }
   };
 
-  // 回答送信処理
+  // 回答送信処理（最新の会話履歴全体をバックエンドへ送信）
   const handleSubmitAnswer = async () => {
     if (!transcript.trim() || isFinished) return;
     const submittedAnswer = transcript.trim();
@@ -176,14 +176,25 @@ export default function InterviewPage() {
     setLoading(true);
     setTranscript('');
 
-    // まずユーザーの回答を履歴に追加
-    setHistory((prev) => [...prev, { role: 'user', text: submittedAnswer }]);
+    // 最新のユーザー回答を含めた履歴配列を作成
+    const updatedHistory: ChatMessage[] = [
+      ...history,
+      { role: 'user', text: submittedAnswer },
+    ];
+    setHistory(updatedHistory);
 
     try {
       const response = await fetch('http://localhost:8000/api/interview/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, answer: submittedAnswer }),
+        body: JSON.stringify({
+          question,
+          answer: submittedAnswer,
+          history: updatedHistory.map((item) => ({
+            role: item.role,
+            text: item.text,
+          })),
+        }),
       });
 
       if (!response.ok) throw new Error('API通信エラー');
@@ -208,7 +219,7 @@ export default function InterviewPage() {
     }
   };
 
-  // 面接終了・総合フィードバック取得処理（取得不可時は仮データを表示）
+  // 面接終了・総合フィードバック取得処理
   const handleFinishInterview = async () => {
     const confirmFinish = window.confirm('面接を終了し、これまでのやり取りから総合フィードバックを作成しますか？');
     if (!confirmFinish) return;
@@ -239,7 +250,6 @@ export default function InterviewPage() {
       setIsFinished(true);
     } catch (error) {
       console.warn('バックエンドからフィードバックを取得できなかったため、仮のフィードバックを表示します:', error);
-      // 仮のフィードバックを表示
       setFeedback(MOCK_FEEDBACK);
       setIsFinished(true);
     } finally {
@@ -321,7 +331,7 @@ export default function InterviewPage() {
               <h2 className="text-xs font-semibold text-slate-500 tracking-wider uppercase">
                 これまでのやり取り（履歴）
               </h2>
-              <span className="text-xs text-slate-400">スクロールして履歴を確認</span>
+              <span className="text-xs text-slate-400">スクロールして過去を確認</span>
             </div>
 
             <div className="flex-1 overflow-y-auto pr-2 space-y-3">
@@ -371,7 +381,7 @@ export default function InterviewPage() {
         <div className="flex flex-col gap-4 min-h-0">
           {!isFinished ? (
             <>
-              {/* 回答入力カード（残り高さにフィットし、内部でスクロール） */}
+              {/* 回答入力カード */}
               <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex-1 min-h-[260px] lg:min-h-0 flex flex-col">
                 <div className="flex justify-between items-center mb-2 shrink-0">
                   <h2 className="text-xs font-semibold text-emerald-600 tracking-wider uppercase">
@@ -391,7 +401,7 @@ export default function InterviewPage() {
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
                   disabled={loading || isFinishing}
-                  placeholder="音声入力で話すか、ここに直接入力してください..."
+                  placeholder="「音声入力」で話すか、ここに直接入力してください..."
                   className="flex-1 w-full bg-slate-50 p-3 rounded text-sm text-slate-800 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none overflow-y-auto disabled:opacity-60"
                 />
 
@@ -418,7 +428,7 @@ export default function InterviewPage() {
                 </div>
               </div>
 
-              {/* 面接終了・評価ボタンカード（高さ固定） */}
+              {/* 面接終了・評価ボタンカード */}
               <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm shrink-0">
                 <p className="text-xs text-slate-500 mb-2.5 leading-relaxed">
                   十分な質問に回答したら、面接を終了してこれまでのやり取りの総合フィードバックを受け取れます。
@@ -428,12 +438,12 @@ export default function InterviewPage() {
                   disabled={!hasUserAnswered || loading || isFinishing}
                   className="w-full py-2.5 px-4 rounded-lg text-sm font-semibold transition shadow-sm bg-slate-800 hover:bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-400"
                 >
-                  {isFinishing ? '総合フィードバックを生成中...' : '面接を終了してフィードバックを受け取る'}
+                  {isFinishing ? '総合フィードバックを生成中...' : '🏁 面接を終了して評価を見る'}
                 </button>
               </div>
             </>
           ) : (
-            /* 面接終了後の総合フィードバック表示パネル（高さ固定・内部スクロール） */
+            /* 面接終了後の総合フィードバック表示パネル */
             feedback && (
               <div className="bg-white p-5 rounded-lg border-t-4 border-t-indigo-600 border border-slate-200 shadow-sm flex-1 min-h-0 flex flex-col">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3 shrink-0">

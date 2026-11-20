@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import os
 import time
-from typing import List
+from typing import List, Optional
 from google import genai
 from google.genai import types
 
@@ -30,9 +30,14 @@ app.add_middleware(
 
 # --- リクエスト / レスポンスモデル定義 ---
 
+class ChatMessage(BaseModel):
+    role: str
+    text: str
+
 class AnswerRequest(BaseModel):
     question: str
     answer: str
+    history: Optional[List[ChatMessage]] = []  # 会話履歴を受け取る
 
 class AnswerResponse(BaseModel):
     next_question: str
@@ -40,10 +45,6 @@ class AnswerResponse(BaseModel):
 
 class ResetResponse(BaseModel):
     initial_question: str
-
-class ChatMessage(BaseModel):
-    role: str
-    text: str
 
 class FinishRequest(BaseModel):
     history: List[ChatMessage]
@@ -55,8 +56,18 @@ class FeedbackResponse(BaseModel):
     improvement_points: List[str]
     processing_time: float
 
+# --- Gemini の response_schema 用モデル定義 ---
+
 class NextQuestionSchema(BaseModel):
-    next_question: str = Field(description="応募者の回答を踏まえた次の面接質問文")
+    followup_count_in_current_topic: int = Field(
+        description="現在の同じ話題（トピック）について、これまでに行われた質問と深掘りの合計回数（1以上の整数）"
+    )
+    should_change_topic: bool = Field(
+        description="深掘り回数が2〜3回に達した、または十分に掘り下げたため、次の質問で新しい話題に切り替えるべきかどうか"
+    )
+    next_question: str = Field(
+        description="面接官として次に投げかける質問文。話題を切り替える場合は「ありがとうございます。では次に〜」のように自然な繋ぎ言葉を入れる"
+    )
 
 class FeedbackSchema(BaseModel):
     score: int = Field(description="0から100までの整数による総合評価スコア")
@@ -86,11 +97,33 @@ async def process_answer(request: AnswerRequest):
             processing_time=0.0
         )
 
-    prompt = f"""
-あなたは面接官です。応募者の回答を踏まえて、次の質問を1つ作成してください。
+    if request.history:
+        conversation_lines = []
+        for msg in request.history:
+            speaker = "面接官" if msg.role == "ai" else "応募者"
+            conversation_lines.append(f"{speaker}: {msg.text}")
+        conversation_text = "\n".join(conversation_lines)
+    else:
+        conversation_text = f"面接官: {request.question}\n応募者: {request.answer}"
 
-【直前の質問】: {request.question}
-【応募者の回答】: {request.answer}
+    prompt = f"""
+あなたは企業の採用面接官です。これまでの会話履歴全体を確認し、ルールに従って「次の質問」を1つ作成してください。
+
+【これまでの会話履歴】
+{conversation_text}
+
+【面接進行の厳格なルール】
+1. 現在の話題に対する深掘り回数を履歴からカウントしてください。
+2. 1つの話題に対する深掘り質問は **1回〜最大3回まで** にしてください。
+3. すでに同じ話題で2〜3回やり取りが続いている場合、または回答が十分に具体的だった場合は、**必ず `should_change_topic` を `true` にし、まだ聞いていない別の話題へ切り替えてください**。
+4. 話題を切り替える際は、前の回答への簡単な相槌（「ありがとうございます。よく分かりました。それでは話題を変えて〜」など）を添えて自然に次のテーマへ移ってください。
+
+【まだ聞いていない場合に選ぶべき次の話題の例】
+- これまで最も力を入れて取り組んだ経験（ガクチカ・職務実績）
+- 困難や壁に直面した経験と、その乗り越え方
+- チームや周囲と協力して何かを成し遂げた経験
+- 自身の強みと弱み（短所への向き合い方）
+- 志望動機・入社後に実現したいキャリアビジョン
 """
 
     try:
@@ -98,7 +131,7 @@ async def process_answer(request: AnswerRequest):
             model='gemini-3.5-flash-lite',
             contents=prompt,
             config=types.GenerateContentConfig(
-                system_instruction="あなたは面接官です。簡潔に次の質問文のみを出力してください。",
+                system_instruction="あなたはプロの採用面接官です。同じ話題ばかりを深掘りし続けず、1〜3回の深掘りでテンポよく次の話題へ切り替えて面接全体を進行してください。",
                 response_mime_type="application/json",
                 response_schema=NextQuestionSchema,
                 temperature=0.7,
@@ -106,10 +139,21 @@ async def process_answer(request: AnswerRequest):
         )
 
         elapsed_time = round(time.time() - start_time, 2)
-        print(f"[Answer] Gemini 3.5 Flash-Lite Response Time: {elapsed_time}s")
         parsed_data: NextQuestionSchema = response.parsed
+
+        if parsed_data:
+            print(
+                f"[Answer] Time: {elapsed_time}s | "
+                f"TopicCount: {parsed_data.followup_count_in_current_topic} | "
+                f"ChangeTopic: {parsed_data.should_change_topic}"
+            )
+            return AnswerResponse(
+                next_question=parsed_data.next_question,
+                processing_time=elapsed_time
+            )
+
         return AnswerResponse(
-            next_question=parsed_data.next_question if parsed_data else "これまでにチームで最も困難を乗り越えた経験について教えてください。",
+            next_question="ありがとうございます。では次に、これまでに直面した困難とそれをどう乗り越えたか教えてください。",
             processing_time=elapsed_time
         )
 
@@ -180,6 +224,7 @@ async def finish_interview(request: FinishRequest):
 
         elapsed_time = round(time.time() - start_time, 2)
         print(f"[Finish] Gemini 3.5 Flash-Lite Response Time: {elapsed_time}s")
+
         parsed_data: FeedbackSchema = response.parsed
         if not parsed_data:
             fallback_feedback.processing_time = elapsed_time
